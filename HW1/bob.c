@@ -18,14 +18,36 @@ unsigned char* Hash_SHA256(unsigned char* input, unsigned long inputlen);
 int main(int argc, char *argv[]) {
 
     //1.Bob reads the ciphertext from the ”Ciphertext.txt” file.
+    unsigned char *ctext_in_hex; //according to specifications
+    int ctext_hex_len;    //file length
+    
+    ctext_in_hex = Read_File("Ciphertext.txt", &ctext_hex_len);
+
+    int message_len = ctext_hex_len / 2;    //as described in Alice
 
     //2.Bob reads the shared seed from the ”SharedSeed.txt” file as unsigned char. The seed is 32 Bytes.
-    
+    unsigned char *shared_seed; //according to specifications
+    int shared_seed_len;    //file length
+
+    shared_seed = Read_File(argv[1], &shared_seed_len); //size already should 32 bytes
+
     //3.Bob generates the secret key from the shared seed based on utilizing the PRNG function from OpenSSL. The key size must match the message length.
+    unsigned char *key;
+
+    key = PRNG(shared_seed, shared_seed_len, message_len);
 
     //4.Bob XORs the received ciphertext with the secret key to obtain the plaintext: (plaintext = ciphertext ^ key).
+    unsigned char *ptext = malloc(message_len);
+
+    //loop to XOR every byte, using inverse of byte to hex, now changing hex to byte before XOR operations
+    for (int i = 0; i< message_len; i++) {
+        unsigned char c_byte;
+        sscanf((char *)&ctext_in_hex[2*i], "%2hhx", &c_byte);
+        ptext[i] = c_byte ^ key[i];
+    }
 
     //5.Bob writes the decrypted plaintext in a file named “Plaintext.txt”.
+    Write_File("Plaintext.txt", ptext, message_len);
 
     //6.Bob hashes the plaintext via SHA256 and writes the Hex format of the hash in a file named ”Hash.txt” for Alice to verify.
 
