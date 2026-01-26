@@ -33,7 +33,7 @@ int main(int argc, char *argv[]) {
     unsigned char *shared_seed; //according to specifications
     int shared_seed_len;    //file length
 
-    message = Read_File(argv[2], &shared_seed_len); //size already should 32 bytes
+    shared_seed = Read_File(argv[2], &shared_seed_len); //size already should 32 bytes
 
     //3.Alice generates the secret key from the shared seed based on utilizing the PRNG function from OpenSSL. The key size must match the message length.
     unsigned char *key;
@@ -46,10 +46,10 @@ int main(int argc, char *argv[]) {
     Write_File("Key.txt", key_in_hex, 2 * message_len);   //write key(now in hex) to file
 
     //5.Alice XORs the message with the secret key to obtain the ciphertext: (Ciphertext = Message ^ Key).
-    unisgned char *ctext = malloc(message_len);
+    unsigned char *ctext = malloc(message_len);
 
     //loop to XOR every byte
-    for (i = 0; i< message_len; i++) {
+    for (int i = 0; i< message_len; i++) {
         ctext[i] = message[i] ^ key[i];
     }
 
