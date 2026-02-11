@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
     
     //4. Server writes the difficulty k to “puzzle k.txt” as ASCII integer.
     
-    retrun 0;
+    return 0;
 }
 
 

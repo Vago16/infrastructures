@@ -28,7 +28,7 @@ int main(int argc, char *argv[]) {
     
     //6. Client writes the iteration count to “solution iterations.txt” as ASCII integer.
     
-    retrun 0;
+    return 0;
 }
 
 

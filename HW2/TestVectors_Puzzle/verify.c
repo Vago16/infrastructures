@@ -21,7 +21,7 @@ int main(int argc, char *argv[]) {
     // • If valid: Write “ACCEPT” to “verification result.txt”, exit 0
     // • If invalid: Write “REJECT” to “verification result.txt”, exit 1
 
-    retrun 0;
+    return 0;
 }
 
 
