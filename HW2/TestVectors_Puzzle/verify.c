@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <openssl/sha.h>
+#include <openssl/evp.h>
 
 //VERIFY
 
@@ -112,15 +113,28 @@ int Bytes_to_Hex(const unsigned char *bytes, int byte_len, char *hex) {
     Cryptographic Functions
 */
 
-// SHA256 hash
+// SHA256 hash, edited to compile correctly
 int Compute_SHA256(const unsigned char *data, int data_len, unsigned char *output) {
 
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
-    EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
-    EVP_DigestUpdate(ctx, input, inputlen);
-    EVP_DigestFinal_ex(ctx, hash, NULL);
-    EVP_MD_CTX_free(ctx);
+    if (!ctx) return -1;
 
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return -1;
+    }
+
+    if (EVP_DigestUpdate(ctx, data, data_len) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return -1;
+    }
+
+    if (EVP_DigestFinal_ex(ctx, output, NULL) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return -1;
+    }
+
+    EVP_MD_CTX_free(ctx);
     return 0;
 }
 

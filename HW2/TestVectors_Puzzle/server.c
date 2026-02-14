@@ -2,21 +2,64 @@
 #include <stdlib.h>
 #include <string.h>
 #include <openssl/sha.h>
+#include <openssl/evp.h>
 
 //SERVER
 
+// Function Prototypes
+char* Read_File(const char *filename, int *length);
+int Write_File(const char *filename, const char *data);
+int Read_Int_From_File(const char *filename);
+int Write_Int_To_File(const char *filename, int value);
+int Hex_to_Bytes(const char *hex, unsigned char *bytes, int hex_len);
+int Bytes_to_Hex(const unsigned char *bytes, int byte_len, char *hex);
+int Compute_SHA256(const unsigned char *data, int data_len, unsigned char *output);
+void Print_Hex(const char *label, const unsigned char *data, int len);
+
 int main(int argc, char *argv[]) {
+
+    //check if right amount of arguments are passed inline, 3 are needed, ie example like "./Server Challenge1.txt Difficulty1.txt"
+    if (argc != 3) {
+        printf("3 arguments needed: server file, Challenge$i.txt, and Difficulty$i.txt\n");
+        return 1;
+    }
 
     //1. Server reads the challenge data from a file named “Challenge$i.txt” (32 bytes hex) as char.
     //  • Technically, this contains timestamp || server nonce
+    int challenge_len;
+    char *challenge_hex = Read_File(argv[1], &challenge_len);
+    //if Challenge$i.txt not passed, exit
+    if (!challenge_hex) {
+        printf("Challenge.txt has not been passed\n");
+        return 1;
+    }
+
+    //if challenge_len not 32 bytes(64 in hex), pass warning
+    if (challenge_len != 64) {
+        printf("Length of challenge is not 32 bytes\n");
+        //free(challenge_hex);
+        //return 1;
+    }
 
     //2. Server reads the difficulty level from a file named “Difficulty$i.txt” (integer) as ASCII integer.
     //  • Value between 8 and 20 representing k-bit difficulty
+    int difficulty_k = Read_Int_From_File(argv[2]);
+    //if Difficulty$i.txt not passed, exit
+    if (difficulty_k < 8 || difficulty_k > 20) {
+        printf("Difficulty.txt does not contain a value between 8 and 20\n");
+        free(challenge_hex);
+        return 1;
+    }
 
     //3. Server writes the challenge to “puzzle challenge.txt” as hex string.
-    
+    Write_File("challenge_hex.txt", challenge_hex);    
+
     //4. Server writes the difficulty k to “puzzle k.txt” as ASCII integer.
-    
+    Write_Int_To_File("puzzle_key.txt", difficulty_k); 
+
+    //cleanup of pointers
+    free(challenge_hex);
+
     return 0;
 }
 
@@ -108,15 +151,28 @@ int Bytes_to_Hex(const unsigned char *bytes, int byte_len, char *hex) {
     Cryptographic Functions
 */
 
-// SHA256 hash
+// SHA256 hash, edited to compile correctly
 int Compute_SHA256(const unsigned char *data, int data_len, unsigned char *output) {
 
     EVP_MD_CTX *ctx = EVP_MD_CTX_new();
-    EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
-    EVP_DigestUpdate(ctx, input, inputlen);
-    EVP_DigestFinal_ex(ctx, hash, NULL);
-    EVP_MD_CTX_free(ctx);
+    if (!ctx) return -1;
 
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return -1;
+    }
+
+    if (EVP_DigestUpdate(ctx, data, data_len) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return -1;
+    }
+
+    if (EVP_DigestFinal_ex(ctx, output, NULL) != 1) {
+        EVP_MD_CTX_free(ctx);
+        return -1;
+    }
+
+    EVP_MD_CTX_free(ctx);
     return 0;
 }
 
