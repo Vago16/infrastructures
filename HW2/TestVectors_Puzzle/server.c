@@ -3,6 +3,7 @@
 #include <string.h>
 #include <openssl/sha.h>
 #include <openssl/evp.h>
+#include <time.h>
 
 //SERVER
 
@@ -41,6 +42,8 @@ int main(int argc, char *argv[]) {
         //return 1;
     }
 
+    
+
     //2. Server reads the difficulty level from a file named “Difficulty$i.txt” (integer) as ASCII integer.
     //  • Value between 8 and 20 representing k-bit difficulty
     int difficulty_k = Read_Int_From_File(argv[2]);
@@ -52,10 +55,10 @@ int main(int argc, char *argv[]) {
     }
 
     //3. Server writes the challenge to “puzzle challenge.txt” as hex string.
-    Write_File("challenge_hex.txt", challenge_hex);    
+    Write_File("puzzle_challenge.txt", challenge_hex);    
 
     //4. Server writes the difficulty k to “puzzle k.txt” as ASCII integer.
-    Write_Int_To_File("puzzle_key.txt", difficulty_k); 
+    Write_Int_To_File("puzzle_k.txt", difficulty_k); 
 
     //cleanup of pointers
     free(challenge_hex);

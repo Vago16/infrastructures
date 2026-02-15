@@ -34,12 +34,15 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    unsigned char challenge_bytes[32];  //length of bytes should be 32
-    if (Hex_to_Bytes(challenge_hex, challenge_bytes, challenge_len) != 32) {
+    unsigned char challenge_bytes[32];
+    int challenge_byte_len = Hex_to_Bytes(challenge_hex, challenge_bytes, challenge_len);
+    if (challenge_byte_len != 32) {
         printf("Challenge is not 32 bytes\n");
         free(challenge_hex);
         return 1;
     }
+
+        
 
     //2. Client reads the difficulty k from file “puzzle k.txt” as ASCII integer.
     int difficulty_k = Read_Int_From_File(argv[2]);
@@ -69,10 +72,10 @@ int main(int argc, char *argv[]) {
     uint64_t nonce = 0;//Nonce is 8 bytes (64-bit unsigned integer)
     int num_iter = 0;
 
-    unsigned char chall_and_nonce[40];  //32 bytes + 8 from nonce
+    unsigned char chall_and_nonce[challenge_byte_len + 8];  //+ 8 bytes from nonce
     unsigned char hash_buf[32]; //same length as challenge
 
-    memcpy(chall_and_nonce, challenge_bytes, 32);
+    memcpy(chall_and_nonce, challenge_bytes, challenge_byte_len);
 
     int full_zero_bytes = difficulty_k / 8;
     int partial_bits = difficulty_k % 8;
@@ -89,11 +92,11 @@ int main(int argc, char *argv[]) {
 
         //append nonce
         for (int i = 0; i < 8; i++) {
-            chall_and_nonce[32 + i] = (nonce >> (56 - 8*i)) & 0xFF;
+            chall_and_nonce[challenge_byte_len + i] = (nonce >> (56 - 8*i)) & 0xFF;
         }
 
         //Construct with SHA the data = challenge || nonce, now 40 data_len arg passed because of nonce
-        if (Compute_SHA256(chall_and_nonce, 40, hash_buf) != 0) {
+        if (Compute_SHA256(chall_and_nonce, challenge_byte_len + 8, hash_buf) != 0) {
             printf("SHA256 hash failed\n");
             free(challenge_hex);
             return 1;
@@ -129,7 +132,7 @@ int main(int argc, char *argv[]) {
     unsigned char nonce_bytes[8];
 
     for (int i = 0; i < 8; i++) {
-        nonce_bytes[i] = (nonce >> (56 - 8*i)) & 0xFF;
+        nonce_bytes[i] = (nonce >> (56 - 8*i)) & 0xFF;  
     }
 
     char nonce_hex[17]; //ready to store the nonce
