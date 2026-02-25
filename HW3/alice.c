@@ -12,7 +12,7 @@
 
 //Function prototypes
 unsigned char* Read_File (char fileName[], int *fileLen);
-void Write_File(char fileName[], char input[], int input_length);
+void Write_File(char fileName[], char input[], int input_length, char mode[]);
 void Convert_to_Hex (char output[], unsigned char input[], int inputlength);
 void Show_in_Hex (char name[], unsigned char hex[], int hexlen);
 unsigned char* PRNG(unsigned char *seed, unsigned long seedlen, unsigned long prnglen);
@@ -24,16 +24,76 @@ unsigned char* HMAC_SHA256(unsigned char *key, int key_len, unsigned char *data,
 int main(int argc, char *argv[]) {
 
     //First, Alice reads the shared seed from a file named “SharedSeed.txt” and uses the PRNG (ChaCha20) to create the initial symmetric key k1.
+    int seed_len;
+    unsigned char *seed = Read_File("SharedSeed.txt", &seed_len);
 
+    //create the initial symmetric key k1
+    unsigned char *ki = PRNG(seed, seed_len, 32);
+   
+    // Second, read from "Messages.txt"
+    int messages_len;
+    unsigned char *messages_buf = Read_File("Messages.txt", &messages_len);
+
+    int num_messages = 10;
+    int msg_size = 1024;
+
+    //Third, create array of pointers to each message, points to start of each message
+    unsigned char *messages[10];
+    for (int i = 0; i < num_messages; i++) {
+        messages[i] = messages_buf + i * msg_size;
+    }
+
+    //Fourth, create storage for outputs from main message loop
+    unsigned char *ciphertexts[10];
+    unsigned char *individual_hmacs[10];
+    unsigned char *keys[10];       // store ki for each message
+    unsigned char *agg_hmac = NULL; 
+    unsigned int hmac_len;
+
+    //Fifth, initialize aggregated HMAC
+    agg_hmac = malloc(SHA256_DIGEST_LENGTH);
+    memset(agg_hmac, 0, SHA256_DIGEST_LENGTH);
+
+    //MAIN LOOP over messages
+    for (int i = 0; i < num_messages; i++) {
     // • For every message Mi, i = 1, . . . , n, performs the following operations:
+
     // 1. Compute the ciphertext: Ci = Enc(ki, Mi).
+    int ctext_len;
+    ciphertexts[i] = AES_CTR_Encrypt(ki, messages[i], msg_size, &ctext_len);
 
     // 2. Individual HMAC: Si = HM AC(ki, Ci). 
+    individual_hmacs[i] = HMAC_SHA256(ki, 32, ciphertexts[i], ctext_len, &hmac_len);
 
     // 3. Aggregate HMAC: S1,i = H(S1,i−1||Si)
+    unsigned char *temp = malloc(64);
+    memcpy(temp, agg_hmac, 32);
+    memcpy(temp + 32, individual_hmacs[i], 32);
+
+    //unsigned char *temp = malloc(SHA256_DIGEST_LENGTH + SHA256_DIGEST_LENGTH);
+    //memcpy(temp, agg_hmac, SHA256_DIGEST_LENGTH);
+    //memcpy(temp + SHA256_DIGEST_LENGTH, individual_hmacs[i], SHA256_DIGEST_LENGTH);
+
+    //agg_hmac = Hash_SHA256(temp, SHA256_DIGEST_LENGTH + SHA256_DIGEST_LENGTH);
+
+    unsigned char *new_agg = Hash_SHA256(temp, 64);
+    free(agg_hmac);
+    agg_hmac = new_agg;
+
+    free(temp);
+
 
     // 4. Update the key for every message ki+1 = H(ki).
+    keys[i] = malloc(32);
+    memcpy(keys[i], ki, 32);
 
+    unsigned char *next_ki = Hash_SHA256(ki, 32);
+    free(ki);       //freeing up old key
+    ki = next_ki;
+
+    //cleanup
+    free(temp);
+    }
     // • After processing all messages, Alice writes the following files:
     // – Keys in ”Keys.txt”
     // • Alice converts the keys into Hex and writes them in a file named “Keys.txt” in multiple lines.
@@ -47,6 +107,12 @@ int main(int argc, char *argv[]) {
     // – Aggregated HMAC in ”AggregatedHMAC.txt”
     // • Alice converts the aggregated HMAC into Hex and writes it in a file named “AggregatedHMAC.txt”.
     
+    //cleanup
+    free(seed);
+    free(ki);
+    free(messages_buf);
+    free(agg_hmac);
+
     return 0;
 }
 
@@ -87,16 +153,16 @@ unsigned char* Read_File(const char *filename, int *length) {
 /*============================
         Write to File
 ==============================*/
-void Write_File(char fileName[], char input[], int input_length){
-  FILE *pFile;
-  pFile = fopen(fileName,"wb");
-  if (pFile == NULL){
-    printf("Error opening file. \n");
-    exit(0);
-  }
-  //fputs(input, pFile);
-  fwrite(input, 1, input_length, pFile);
-  fclose(pFile);
+void Write_File(char fileName[], char input[], int input_length, char mode[]) {
+    FILE *pFile = fopen(fileName, mode);   // "wb"-write/create file or "ab"-append to file
+
+    if (pFile == NULL){
+        printf("Error opening file.\n");
+        exit(1);
+    }
+
+    fwrite(input, 1, input_length, pFile);
+    fclose(pFile);
 }
 
 /*============================
