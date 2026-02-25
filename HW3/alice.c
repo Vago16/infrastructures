@@ -91,27 +91,47 @@ int main(int argc, char *argv[]) {
     free(ki);       //freeing up old key
     ki = next_ki;
 
-    //cleanup
-    free(temp);
     }
     // • After processing all messages, Alice writes the following files:
     // – Keys in ”Keys.txt”
     // • Alice converts the keys into Hex and writes them in a file named “Keys.txt” in multiple lines.
+    Write_File("Keys.txt", "", 0, "wb");  //create file
+
+    for (int i = 0; i < num_messages; i++) {
+        Write_Hex_Line("Keys.txt", keys[i], 32, "ab");  //append 10 lines of keys
+    }
 
     // – Ciphertexts in ”Ciphertexts.txt”
     // • Alice converts the ciphertexts into Hex and writes them in a file named “Ciphertexts.txt” in multiple lines.
+    Write_File("Ciphertext.txt", "", 0, "wb");  //create file
+
+    for (int i = 0; i < num_messages; i++) {
+        Write_Hex_Line("Ciphertext.txt", ciphertexts[i], msg_size, "ab");  //append 10 lines of ciphertext
+    }
 
     // – Individual HMACs in ”IndividualHMACs.txt”
     // • Alice converts the individual HMACs into Hex and writes them in a file named “IndividualHMACs.txt” in multiple lines.
+    Write_File("IndividualHMACss.txt", "", 0, "wb");  //create file
+
+    for (int i = 0; i < num_messages; i++) {
+        Write_Hex_Line("IndividualHMACs.txt", individual_hmacs[i], 32, "ab");  //append 10 lines of individucal HMAC
+    }
 
     // – Aggregated HMAC in ”AggregatedHMAC.txt”
     // • Alice converts the aggregated HMAC into Hex and writes it in a file named “AggregatedHMAC.txt”.
-    
+    Write_Hex_Line("AggregatedHMAC.txt", agg_hmac, 32, "wb");
+
     //cleanup
     free(seed);
     free(ki);
     free(messages_buf);
     free(agg_hmac);
+    //cleanup of array elements
+    for (int i = 0; i < num_messages; i++) {
+        free(ciphertexts[i]);
+        free(individual_hmacs[i]);
+        free(keys[i]);
+    }
 
     return 0;
 }
@@ -270,3 +290,15 @@ unsigned char* HMAC_SHA256(unsigned char *key, int key_len, unsigned char *data,
     return result;
 }
 
+//Write_Hex_line function- appending hex line by line
+void Write_Hex_Line(char filename[], unsigned char data[], int len, char mode[])
+{
+    char *hex = malloc(len * 2);
+
+    Convert_to_Hex(hex, data, len);
+
+    Write_File(filename, hex, len * 2, mode);
+    Write_File(filename, "\n", 1, "ab");
+
+    free(hex);
+}
