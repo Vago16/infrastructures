@@ -33,7 +33,24 @@ int main(int argc, char *argv[]) {
    
     // Second, read from "Messages.txt"
     int messages_len;
-    unsigned char *messages_buf = Read_File(argv[1], &messages_len);
+    unsigned char *messages_buf_raw = Read_File(argv[1], &messages_len);
+    unsigned char *messages_buf = malloc(10240);
+    int j = 0;
+
+    for (int i = 0; i < messages_len; i++) {
+        if (messages_buf_raw[i] != '\n' && messages_buf_raw[i] != '\r') {
+            messages_buf[j++] = messages_buf_raw[i];
+        }
+    }
+
+    free(messages_buf_raw);
+
+    if (j != 10240) {
+        printf("Error: cleaned message size is %d, expected 10240\n", j);
+        exit(1);
+    }
+
+    messages_len = 10240;
 
     int num_messages = 10;
     int msg_size = 1024;
@@ -48,6 +65,7 @@ int main(int argc, char *argv[]) {
     unsigned char *ciphertexts[10];
     unsigned char *individual_hmacs[10];
     unsigned char *keys[10];       // store ki for each message
+    int ciphertext_lens[10];
     unsigned char *agg_hmac = NULL; 
     unsigned int hmac_len;
 
@@ -60,14 +78,11 @@ int main(int argc, char *argv[]) {
     // • For every message Mi, i = 1, . . . , n, performs the following operations:
 
     // 1. Compute the ciphertext: Ci = Enc(ki, Mi).
-    int this_msg_len = msg_size;  // default length
-    //if last message
-    if (i == num_messages - 1) {
-        this_msg_len = messages_len - i * msg_size;
-    }
+    int this_msg_len = 1024;  // default length
 
     int ctext_len;
     ciphertexts[i] = AES_CTR_Encrypt(ki, messages[i], this_msg_len, &ctext_len);
+    ciphertext_lens[i] = ctext_len;
 
     // 2. Individual HMAC: Si = HM AC(ki, Ci). 
     individual_hmacs[i] = HMAC_SHA256(ki, 32, ciphertexts[i], ctext_len, &hmac_len);
@@ -125,11 +140,11 @@ int main(int argc, char *argv[]) {
 
     // – Ciphertexts in ”Ciphertexts.txt”
     // • Alice converts the ciphertexts into Hex and writes them in a file named “Ciphertexts.txt” in multiple lines.
-    Write_File("Ciphertext.txt", "", 0, "wb");  //create file
+    Write_File("Ciphertexts.txt", "", 0, "wb");  //create file
 
-    for (int i = 0; i < num_messages; i++)
-    Write_Hex_Line("Ciphertexts.txt", ciphertexts[i], (i == num_messages - 1) ? messages_len - i * msg_size : msg_size, "ab");
-
+    for (int i = 0; i < num_messages; i++) {
+        Write_Hex_Line("Ciphertexts.txt", ciphertexts[i], ciphertext_lens[i], "ab");
+    }
 
     // – Individual HMACs in ”IndividualHMACs.txt”
     // • Alice converts the individual HMACs into Hex and writes them in a file named “IndividualHMACs.txt” in multiple lines.
