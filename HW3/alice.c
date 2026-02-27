@@ -89,17 +89,17 @@ int main(int argc, char *argv[]) {
 
     // 3. Aggregate HMAC: S1,i = H(S1,i−1||Si)
     if (i == 0) {
-        // First message: aggregated HMAC is just the individual HMAC
-        free(agg_hmac);
-        agg_hmac = malloc(SHA256_DIGEST_LENGTH);
-        memcpy(agg_hmac, individual_hmacs[i], SHA256_DIGEST_LENGTH);
-    } else {
-        // Subsequent messages: hash previous aggregate || current individual HMAC
+        //just hash the first input for the first element
+        agg_hmac = Hash_SHA256(individual_hmacs[0], SHA256_DIGEST_LENGTH);
+    }
+    else {
         unsigned char temp[64];
-        memcpy(temp, agg_hmac, SHA256_DIGEST_LENGTH);
-        memcpy(temp + SHA256_DIGEST_LENGTH, individual_hmacs[i], SHA256_DIGEST_LENGTH);
+
+        memcpy(temp, agg_hmac, 32);
+        memcpy(temp + 32, individual_hmacs[i], 32);
 
         unsigned char *new_agg = Hash_SHA256(temp, 64);
+
         free(agg_hmac);
         agg_hmac = new_agg;
     }
@@ -156,7 +156,9 @@ int main(int argc, char *argv[]) {
 
     // – Aggregated HMAC in ”AggregatedHMAC.txt”
     // • Alice converts the aggregated HMAC into Hex and writes it in a file named “AggregatedHMAC.txt”.
-    Write_Hex_Line("AggregatedHMAC.txt", agg_hmac, 32, "wb");
+    char hex[64];
+    Convert_to_Hex(hex, agg_hmac, 32);
+    Write_File("AggregatedHMAC.txt", hex, 64, "wb");
 
     //cleanup
     free(seed);
