@@ -138,12 +138,32 @@ int main(int argc, char *argv[]) {
         Write_Hex_Line("Keys.txt", keys[i], 32, "ab");  //append 10 lines of keys
     }
 
+    // Ensure file ends with newline
+    Write_File("Keys.txt", "\n", 1, "ab");
+
+    for (int i = 0; i < num_messages; i++) {
+        if (i < num_messages - 1) {
+            Write_Hex_Line("Keys.txt", keys[i], 32, i==0 ? "wb" : "ab"); // with newline
+        } else {
+            // Last line: write hex only, no newline
+            char hex[64];
+            Convert_to_Hex(hex, keys[i], 32);
+            Write_File("Keys.txt", hex, 64, i==0 ? "wb" : "ab");
+        }
+    }
+
     // – Ciphertexts in ”Ciphertexts.txt”
     // • Alice converts the ciphertexts into Hex and writes them in a file named “Ciphertexts.txt” in multiple lines.
     Write_File("Ciphertexts.txt", "", 0, "wb");  //create file
 
     for (int i = 0; i < num_messages; i++) {
-        Write_Hex_Line("Ciphertexts.txt", ciphertexts[i], ciphertext_lens[i], "ab");
+        if (i < num_messages - 1) {
+            Write_Hex_Line("Ciphertexts.txt", ciphertexts[i], ciphertext_lens[i], i == 0 ? "wb" : "ab");
+        } else {
+            char hex[ciphertext_lens[i] * 2];
+            Convert_to_Hex(hex, ciphertexts[i], ciphertext_lens[i]);
+            Write_File("Ciphertexts.txt", hex, ciphertext_lens[i] * 2, i == 0 ? "wb" : "ab");
+        }
     }
 
     // – Individual HMACs in ”IndividualHMACs.txt”
@@ -151,8 +171,14 @@ int main(int argc, char *argv[]) {
     Write_File("IndividualHMACs.txt", "", 0, "wb");  //create file
 
     for (int i = 0; i < num_messages; i++) {
-        Write_Hex_Line("IndividualHMACs.txt", individual_hmacs[i], 32, "ab");  //append 10 lines of individucal HMAC
+    if (i < num_messages - 1) {
+        Write_Hex_Line("IndividualHMACs.txt", individual_hmacs[i], 32, i == 0 ? "wb" : "ab");
+    } else {
+        char hex[64];
+        Convert_to_Hex(hex, individual_hmacs[i], 32);
+        Write_File("IndividualHMACs.txt", hex, 64, i == 0 ? "wb" : "ab");
     }
+}
 
     // – Aggregated HMAC in ”AggregatedHMAC.txt”
     // • Alice converts the aggregated HMAC into Hex and writes it in a file named “AggregatedHMAC.txt”.
@@ -338,6 +364,7 @@ void Write_Hex_Line(char filename[], unsigned char data[], int len, char mode[])
 
     Write_File(filename, hex, len * 2, mode);
     Write_File(filename, "\n", 1, "ab");
+    
 
     free(hex);
 }
