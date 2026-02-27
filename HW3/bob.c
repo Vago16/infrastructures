@@ -186,14 +186,19 @@ static void read_agg_hex(const char *path, unsigned char agg[32]) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc != 4) {
-        fprintf(stderr, "Usage: %s SharedSeed.txt Ciphertexts.txt AggregatedHMAC.txt\n", argv[0]);
+    //if (argc != 4) {
+    //    fprintf(stderr, "Usage: %s SharedSeed.txt Ciphertexts.txt AggregatedHMAC.txt\n", argv[0]);
+    //    return 1;
+    //}
+
+    if (argc < 2) {
+        fprintf(stderr, "Usage: %s SharedSeed.txt at minimum\n", argv[0]);
         return 1;
     }
 
     const char *seed_path = argv[1];
-    const char *ct_path   = argv[2];
-    const char *agg_path  = argv[3];
+    const char *ct_path   = (argc >= 3) ? argv[2] : "Ciphertexts.txt";
+    const char *agg_path  = (argc >= 4) ? argv[3] : "AggregatedHMAC.txt";
 
     unsigned char seed[32];
     read_seed(seed_path, seed);
