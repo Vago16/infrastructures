@@ -81,12 +81,16 @@ int main(int argc, char *argv[]) {
 	 * If either file is missing, abort immediately.
 	 * ------------------------------------------------------------
 	 */
-	/* TODO:
+	/* 
 	 *  - Check existence of:
 	 *        client_temp_sk_path
 	 *        client_temp_pk_path
 	 *  - Print an error and exit on failure
 	 */
+	if (!file_exists(client_temp_sk_path || client_temp_pk_path)) {
+		fprintf(stderr, "Error: One or both temporary key files missing\n");
+		return EXIT_FAILURE;
+	}
 
 	/* ------------------------------------------------------------
 	 * STEP 1: Sign Client temporary public key
@@ -105,12 +109,17 @@ int main(int argc, char *argv[]) {
 	 *  - Even if the file already exists, regenerate it.
 	 * ------------------------------------------------------------
 	 */
-	/* TODO:
+	/* 
 	 *  - Use an ECDSA signing helper
 	 *  - Sign the CONTENTS of client_temp_pk_path
 	 *  - Write the signature in hex format to:
 	 *        "Client_Signature.txt"
 	 */
+	if (ecdsa_sign_file_to_hex("Client_SK.txt", client_temp_pk_path, "Client_Signature.txt")) {
+		fprintf(stderr, "Client Error: Signing Client temporary public key failed\n");
+		return EXIT_FAILURE;
+	}
+	 
 
 	/* ------------------------------------------------------------
 	 * STEP 2: Wait for AS response
@@ -123,6 +132,10 @@ int main(int argc, char *argv[]) {
 	 *  - Check if "AS_REP.txt" exists
 	 *  - If not, print a status message and exit SUCCESSFULLY
 	 */
+	if (!file_exists("AS_REP.txt")) {
+		fprintf(stderr, "Client Error: AS_REP does not yet exist\n");
+		return EXIT_SUCCESS;
+	}
 
 	/* ------------------------------------------------------------
 	 * STEP 3: Derive Key_Client_AS
@@ -141,13 +154,46 @@ int main(int argc, char *argv[]) {
 	 * Abort if the derived key does not match.
 	 * ------------------------------------------------------------
 	 */
-	/* TODO:
+	/* 
 	 *  - Perform ECDH using the two key files
 	 *  - Hash the shared secret using SHA-256
 	 *  - Read "Key_Client_AS.txt" (hex)
 	 *  - Compare values byte-for-byte
 	 */
+	 //perform ECDH
+	unsigned char *shared_secret = NULL;
+	size_t shared_len = 0;
 
+	if(!ecdh_shared_secret_files(client_temp_sk_path, as_temp_pk_path, &shared_secret, shared_len)) {
+		fprintf(stderr, "CLient Error: ECDH failed\n");
+		return EXIT_FAILURE;
+	}
+
+	 //hash shared secret
+	if (!sha256_bytes(shared_secret, shared_len, key_client_as)) {
+		fprintf(stderr, "Client Erorr: SHA-256 hash failed\n");
+		free(shared_secret);
+		return EXIT_FAILURE;
+	}
+
+	 //read ref key in Key_Client_AS.txt
+	unsigned char *ref_key = NULL;
+	size_t ref_len = 0;
+
+	if (!read_hex_file_bytes("Key_Client_AS.txt", &ref_key, &ref_len) || ref_len != 32) {
+		fprintf(stderr, "Client Error: Failed to read Key_Client_AS.txt or wrong length\n");
+		return EXIT_FAILURE;
+
+	 //compare
+	if (memcmp(key_client_as, ref_key, 32) != 0) {
+		fprintf(stderr, "Client Error: Keys from Client_temp_Sk.txt and AS_temp_PK.txt do not match\n");
+		free(ref_key);
+		return EXIT_FAILURE;
+	}
+
+	 //cleanup
+	free(shared_secret);
+	free(ref_key);
 	/* ------------------------------------------------------------
 	 * STEP 4: Decrypt AS_REP
 	 *
@@ -161,12 +207,55 @@ int main(int argc, char *argv[]) {
 	 * Extract BOTH values.
 	 * ------------------------------------------------------------
 	 */
-	/* TODO:
+	/* 
 	 *  - AES-decrypt AS_REP.txt using Key_Client_AS
 	 *  - Copy first 32 bytes → key_client_tgs
 	 *  - Remaining bytes → TGT (hex string)
 	 */
+	 //Read and decrypt ciphertext using Key_Client_AS
+	unsigned char *cipher = NULL;
+	size_t cipher_len = 0;
 
+	if (!read_hex_file_bytes("AS_REP.txt", &cipher, &cipher_len)) {
+		fprintf(stderr, "Client Error: Failed to read AS_REP.txt\n");
+		return EXIT_FAILURE;
+	}
+
+	unsigned char *plain = NULL;	//to hold key_client_tgs(first 32 bytes)
+	size_t plain_len = 0;
+
+	if (!aes256_ecb_decrypt(cipher, cipher_len, key_client_as, &plain, &plain_len)) {
+		fprintf(stderr, "Client Error: Failed to decrypt AS_REP ciphertext\n");
+		free(cipher);
+		return EXIT_FAILURE;
+	}
+
+	free(cipher);
+
+	 //Copy first 32 bytes → key_client_tgs
+	memcpy(key_client_tgs, plain, 32);
+
+	if (!write_hex_file("Key_Client_TGS.txt", key_client_tgs, 32)) {
+		fprintf(stderr, "Client Error: Failed to write hex to Key_Client_TGS.txt\n");
+		return EXIT_FAILURE;
+	}
+
+	 //Remaining bytes → TGT (hex string)
+	size_t tgt_len = plain_len - 32;
+	char *tgt_hex = malloc(tgt_len + 1);
+
+	memcpy(tgt_hex, plain + 32, tgt_len);
+	tgt_hex[tgt_len] = '\0';
+
+	if (!write_hex_file("Key_Client_TGS.txt", key_client_tgs, 32)) {
+		fprintf(stderr, "Client Error: Failed to write hex to Key_Client_TGS.txt\n");
+		free(tgt_hex);
+		return EXIT_FAILURE;
+	}
+
+	 //cleanup
+	free(plain);
+	free(tgt_hex);
 	/* ------------------------------------------------------------
 	 * STEP 5: Create TGS_REQ (only once)
 	 *
