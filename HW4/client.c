@@ -87,7 +87,7 @@ int main(int argc, char *argv[]) {
 	 *        client_temp_pk_path
 	 *  - Print an error and exit on failure
 	 */
-	if (!file_exists(client_temp_sk_path || client_temp_pk_path)) {
+	if (!file_exists(client_temp_sk_path) || !file_exists(client_temp_pk_path)) {
 		fprintf(stderr, "Error: One or both temporary key files missing\n");
 		return EXIT_FAILURE;
 	}
@@ -115,7 +115,7 @@ int main(int argc, char *argv[]) {
 	 *  - Write the signature in hex format to:
 	 *        "Client_Signature.txt"
 	 */
-	if (ecdsa_sign_file_to_hex("Client_SK.txt", client_temp_pk_path, "Client_Signature.txt")) {
+	if (!ecdsa_sign_file_to_hex("Client_SK.txt", client_temp_pk_path, "Client_Signature.txt")) {
 		fprintf(stderr, "Client Error: Signing Client temporary public key failed\n");
 		return EXIT_FAILURE;
 	}
@@ -133,7 +133,7 @@ int main(int argc, char *argv[]) {
 	 *  - If not, print a status message and exit SUCCESSFULLY
 	 */
 	if (!file_exists("AS_REP.txt")) {
-		fprintf(stderr, "Client Error: AS_REP does not yet exist\n");
+		printf("Client Error: AS_REP does not yet exist\n");
 		return EXIT_SUCCESS;
 	}
 
@@ -164,7 +164,7 @@ int main(int argc, char *argv[]) {
 	unsigned char *shared_secret = NULL;
 	size_t shared_len = 0;
 
-	if(!ecdh_shared_secret_files(client_temp_sk_path, as_temp_pk_path, &shared_secret, shared_len)) {
+	if(!ecdh_shared_secret_files(client_temp_sk_path, as_temp_pk_path, &shared_secret, &shared_len)) {
 		fprintf(stderr, "CLient Error: ECDH failed\n");
 		return EXIT_FAILURE;
 	}
@@ -183,6 +183,7 @@ int main(int argc, char *argv[]) {
 	if (!read_hex_file_bytes("Key_Client_AS.txt", &ref_key, &ref_len) || ref_len != 32) {
 		fprintf(stderr, "Client Error: Failed to read Key_Client_AS.txt or wrong length\n");
 		return EXIT_FAILURE;
+	}
 
 	 //compare
 	if (memcmp(key_client_as, ref_key, 32) != 0) {
@@ -247,11 +248,7 @@ int main(int argc, char *argv[]) {
 	memcpy(tgt_hex, plain + 32, tgt_len);
 	tgt_hex[tgt_len] = '\0';
 
-	if (!write_hex_file("Key_Client_TGS.txt", key_client_tgs, 32)) {
-		fprintf(stderr, "Client Error: Failed to write hex to Key_Client_TGS.txt\n");
-		free(tgt_hex);
-		return EXIT_FAILURE;
-	}
+	write_text_file("TGT.txt", tgt_hex);
 
 	 //cleanup
 	free(plain);
@@ -271,12 +268,38 @@ int main(int argc, char *argv[]) {
 	 *
 	 * ------------------------------------------------------------
 	 */
-	/* TODO:
+	/* 
 	 *  - Check existence of "TGS_REQ.txt"
 	 *  - If missing:
 	 *      - Encrypt string "Client" using Key_Client_TGS
 	 *      - Write all three required lines in order
 	 */
+	if (!file_exists("TGS_REQ.txt")) {
+		char *tgt_hex = read_line("TGT.txt", 1);
+		if (!tgt_hex) {
+			fprintf(stderr, "Client Error: Failed to read TGT.txt\n");
+			return EXIT_FAILURE;
+		}
+	
+	char *auth_hex = NULL;
+    const char *auth_plain = "Client";
+    if (!aes256_encrypt_bytes_to_hex_string(key_client_tgs, (unsigned char *)auth_plain, strlen(auth_plain), &auth_hex)) {
+        fprintf(stderr, "Client Error: Failed to create Auth_Client_TGS\n");
+        free(tgt_hex);
+        return EXIT_FAILURE;
+    }
+
+	if (!write_text_lines("TGS_REQ.txt", tgt_hex, auth_hex, "Service")) {
+        fprintf(stderr, "Client Error: Failed to write TGS_REQ.txt\n");
+        free(tgt_hex);
+        free(auth_hex);
+        return EXIT_FAILURE;
+    }
+
+	//cleanup
+	free(tgt_hex);
+    free(auth_hex);
+	}
 
 	/* ------------------------------------------------------------
 	 * STEP 6: Wait for TGS response
@@ -289,6 +312,10 @@ int main(int argc, char *argv[]) {
 	 *  - Check existence of "TGS_REP.txt"
 	 *  - If not present, print status and exit SUCCESSFULLY
 	 */
+	if (!file_exists("TGS_REP.txt")) {
+		printf("Client Warning: TGS_REP not present\n");
+		return EXIT_SUCCESS;
+	} 
 
 	/* ------------------------------------------------------------
 	 * STEP 7: Recover Key_Client_App
@@ -308,7 +335,57 @@ int main(int argc, char *argv[]) {
 	 *  - Convert hex string to raw bytes
 	 *  - Store exactly 32 bytes in key_client_app
 	 */
+	unsigned char *cipher2 = NULL;
+	size_t cipher2_len = 0;
 
+	 //read TGS_REP.txt
+	char *enc_key_hex = read_line("TGS_REP.txt", 2);
+	if (!enc_key_hex) {
+		fprintf(stderr, "Client Error: Failed to read encrypted Key_Client_App\n");
+		return EXIT_FAILURE;
+	}
+
+	if (!hex_to_bytes(enc_key_hex, &cipher2, &cipher2_len)) {
+		fprintf(stderr, "Client Error: Failed to decode hex\n");
+		free(enc_key_hex);
+		return EXIT_FAILURE;
+	}
+
+	 // AES-decrypt with Key_Client_TGS
+	unsigned char *plain2 = NULL;
+	size_t plain2_len = 0;
+
+	if (!aes256_ecb_decrypt(cipher, cipher_len, key_client_tgs, &plain2, &plain2_len)) {
+		fprintf(stderr, "Error: Failed to decrypt TGS_REP\n");
+		free(cipher);
+		return EXIT_FAILURE;
+	}
+
+	memcpy(key_client_app, plain2, 32);
+
+	char *ticket_hex = read_line("TGS_REP.txt", 1);
+	if (!ticket_hex) {
+		fprintf(stderr, "Client Error: Failed to read Ticket_App\n");
+		return EXIT_FAILURE;
+	}
+
+	if (!write_hex_file("Key_Client_App.txt", key_client_app, 32)) {
+		fprintf(stderr, "CLient Error: Failed to write Key_Client_App.txt\n");
+		free(ticket_hex);
+		return EXIT_FAILURE;
+	}
+
+	if (!write_text_file("Service_Ticket.txt", ticket_hex)) {
+		fprintf(stderr, "Client Error: Failed to write Service_Ticket.txt\n");
+		free(ticket_hex);
+		return EXIT_FAILURE;
+	}
+
+	//cleanup
+	free(cipher2);
+	free(ticket_hex);
+	free(plain2);
+	free(enc_key_hex);
 	/* ------------------------------------------------------------
 	 * STEP 8: Create APP_REQ
 	 *
@@ -321,11 +398,37 @@ int main(int argc, char *argv[]) {
 	 *
 	 * ------------------------------------------------------------
 	 */
-	/* TODO:
+	/*
 	 *  - Encrypt string "Client" using Key_Client_App
 	 *  - Read Ticket_App from TGS_REP.txt (line 1)
 	 *  - Write both values to "APP_REQ.txt"
 	 */
+	/* Encrypt "Client" using Key_Client_App */
+	char *auth_hex = NULL;
+
+	if (!aes256_encrypt_bytes_to_hex_string(
+			key_client_app,
+			(unsigned char *)"Client",
+			strlen("Client"),
+			&auth_hex)) {
+
+		fprintf(stderr, "Client Error: Failed to create Auth_Client_App\n");
+		return EXIT_FAILURE;
+	}
+
+	FILE *f_out = fopen("APP_REQ.txt", "w");
+	if (!f_out) {
+		fprintf(stderr, "Client Error: Could not create APP_REQ.txt\n");
+		return EXIT_FAILURE;
+	}
+
+	fprintf(f_out, "%s\n%s\n", ticket_hex, auth_hex);
+
+	fclose(f_out);
+	
+	//cleanup
+	free(auth_hex);
+	free(ticket_hex);
 
 	return EXIT_SUCCESS;
 }
