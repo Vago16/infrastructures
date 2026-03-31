@@ -163,11 +163,39 @@ int main(int argc, char **argv)
 	 * EXIT if any file does not exist or parsing fails.
 	 */
 
-	// TODO: Read x_a from argv[1]
-	// TODO: Allocate U_a, U_b, D using EC_POINT_new
-	// TODO: Read U_a from argv[2]
-	// TODO: Read U_b from argv[4]
-	// TODO: Read D from argv[5]
+	// Read x_a from argv[1]
+	if (!read_bn_hex(argv[1], &x_a)) {
+		fprintf(stderr, "Error reading x_a from argument 1\n");
+		goto cleanup;
+	}
+
+	// Allocate U_a, U_b, D using EC_POINT_new
+	U_a = EC_POINT_new(group);
+	U_b = EC_POINT_new(group);
+	D   = EC_POINT_new(group);
+
+	if (!U_a || !U_b || !D) {
+		fprintf(stderr, "Error allocating EC_POINTs U_a, U_b, and D\n");
+		goto cleanup;
+	}
+
+	// Read U_a from argv[2]
+	if (!read_point_hex(argv[2], group, &U_a)) {
+		fprintf(stderr, "Error reading U_a from argument 2\n");
+		goto cleanup;
+	}
+
+	// Read U_b from argv[4]
+	if (!read_point_hex(argv[4], group, &U_b)) {
+		fprintf(stderr, "Error reading U_b from argument 4\n");
+		goto cleanup;
+	}
+
+	// Read D from argv[5]
+	if (!read_point_hex(argv[5], group, &D)) {
+		fprintf(stderr, "Error reading D from argument 5\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 6. Load Alice ephemeral scalar p_a
@@ -182,7 +210,11 @@ int main(int argc, char **argv)
 	 * EXIT if missing or invalid.
 	 */
 
-	// TODO: Read p_a from argv[3]
+	// Read p_a from argv[3]
+	if (!read_bn_hex(argv[3], &p_a)) {
+		fprintf(stderr, "Error reading p_a from argument 3\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 7. Compute Alice ephemeral public E_a
@@ -198,9 +230,21 @@ int main(int argc, char **argv)
 	 *   alice_ephemeral_Ea.txt
 	 */
 
-	// TODO: Allocate E_a
-	// TODO: Compute E_a = p_a * P
+	// Allocate E_a
+	E_a = EC_POINT_new(group);
+	if (!E_a) goto cleanup;
+
+	// Compute E_a = p_a * P
+	if (!EC_POINT_mul(group, E_a, NULL, P, p_a, ctx)) {
+		fprintf(stderr, "Error computing E_a\n");
+		goto cleanup;
+	}
+
 	// TODO: Write alice_ephemeral_Ea.txt
+	if (!write_point_hex("alice_ephemeral_Ea.txt", group, E_a)) {
+		fprintf(stderr, "Error writing E_a to alice_ephemeral_Ea.txt\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 8. Read Bob ephemeral public E_b (if available)
@@ -218,7 +262,12 @@ int main(int argc, char **argv)
 	 *       * Exit successfully after writing E_a
 	 */
 
-	// TODO: Attempt to read bob_ephemeral_Eb.txt into E_b
+	// Attempt to read bob_ephemeral_Eb.txt into E_b
+	if (!read_point_hex("bob_ephemeral_Eb.txt", group, &E_b)) {
+		printf("Bob's ephemeral key not found. Exiting after writing E_a.\n");
+		ret = EXIT_SUCCESS;
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 9. Compute h_B = H(ID_B || U_b)
@@ -232,9 +281,30 @@ int main(int argc, char **argv)
 	 *      Function: sha256_to_scalar
 	 */
 
-	// TODO: Serialize U_b
-	// TODO: Build hash buffer
-	// TODO: Compute h_B
+	// Serialize U_b
+	if (!point_to_bytes(group, U_b, &U_bytes, &U_len)) {
+		fprintf(stderr, "Error serializing U_b\n");
+		goto cleanup;
+	}
+
+	// Build hash buffer
+	size_t id_len = strlen(ID_B);
+	buf_len = id_len + U_len;
+
+	buf = malloc(buf_len);
+	if (!buf) goto cleanup;
+
+	memcpy(buf, ID_B, id_len);
+	memcpy(buf + id_len, U_bytes, U_len);
+
+	// Compute h_B
+	if (!sha256_to_scalar(buf, buf_len, q, &h_B)) {
+		fprintf(stderr, "Error computing h_B\n");
+		goto cleanup;
+	}
+
+	free(U_bytes); U_bytes = NULL;
+	free(buf); buf = NULL;
 
 	/* =====================================================
 	 * 10. Compute shared key K_ab
@@ -258,12 +328,44 @@ int main(int argc, char **argv)
 	 *   K_ab  = temp2 + temp1
 	 */
 
-	// TODO: Allocate temp1, temp2, K_ab
-	// TODO: Compute H * U_b
-	// TODO: Add D
-	// TODO: Multiply by x_a
-	// TODO: Compute p_a * E_b
-	// TODO: Add results into K_ab
+	// Allocate temp1, temp2, K_ab
+	temp1 = EC_POINT_new(group);
+	temp2 = EC_POINT_new(group);
+	K_ab  = EC_POINT_new(group);
+
+	if (!temp1 || !temp2 || !K_ab) {
+		goto cleanup;
+	}
+
+	// Compute H * U_b
+	if (!EC_POINT_mul(group, temp1, NULL, U_b, h_B, ctx)) {
+		fprintf(stderr, "Error computing h_B * U_b\n");
+		goto cleanup;
+	}
+
+	// Add D
+	if (!EC_POINT_add(group, temp1, temp1, D, ctx)) {
+		fprintf(stderr, "Error adding D\n");
+		goto cleanup;
+	}
+
+	// Multiply by x_a
+	if (!EC_POINT_mul(group, temp2, NULL, temp1, x_a, ctx)) {
+		fprintf(stderr, "Error computing x_a * temp1\n");
+		goto cleanup;
+	}
+
+	// Compute p_a * E_b
+	if (!EC_POINT_mul(group, temp1, NULL, E_b, p_a, ctx)) {
+		fprintf(stderr, "Error computing p_a * E_b\n");
+		goto cleanup;
+	}
+
+	// Add results into K_ab
+	if (!EC_POINT_add(group, K_ab, temp2, temp1, ctx)) {
+		fprintf(stderr, "Error computing K_ab\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 11. Write shared key to disk
@@ -276,7 +378,11 @@ int main(int argc, char **argv)
 	 *   write_point_hex
 	 */
 
-	// TODO: Write alice_shared_key_Kab.txt
+	// Write alice_shared_key_Kab.txt
+	if (!write_point_hex("alice_shared_key_Kab.txt", group, K_ab)) {
+		fprintf(stderr, "Error writing shared key\n");
+		goto cleanup;
+	}
 
 	printf("[Alice] Shared key K_ab computed and written.\n");
 	ret = EXIT_SUCCESS;
@@ -294,7 +400,27 @@ int main(int argc, char **argv)
 	 */
 
 cleanup:
-	// TODO: Free all allocated memory
+	// Free all allocated memory
+	if (x_a) BN_free(x_a);
+	if (p_a) BN_free(p_a);
+	if (h_B) BN_free(h_B);
+	if (tmp) BN_free(tmp);
+
+	if (U_a) EC_POINT_free(U_a);
+	if (U_b) EC_POINT_free(U_b);
+	if (D) EC_POINT_free(D);
+	if (E_a) EC_POINT_free(E_a);
+	if (E_b) EC_POINT_free(E_b);
+	if (temp1) EC_POINT_free(temp1);
+	if (temp2) EC_POINT_free(temp2);
+	if (K_ab) EC_POINT_free(K_ab);
+
+	if (group) EC_GROUP_free(group);
+	if (q) BN_free(q);
+	if (ctx) BN_CTX_free(ctx);
+
+	if (U_bytes) free(U_bytes);
+	if (buf) free(buf);
 
 	return ret;
 }
