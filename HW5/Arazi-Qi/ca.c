@@ -96,9 +96,11 @@ int main(int argc, char **argv)
 	 *
 	 * EXIT if this function returns false.
 	 */
-
-	// TODO:
 	// if (!init_group(&group, &q)) { print error and goto cleanup; }
+	if (!init_group(&group, &q)) {
+		fprintf(stderr, "Error initializing Elliptic curve group\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 3. Obtain generator P
@@ -112,9 +114,12 @@ int main(int argc, char **argv)
 	 *
 	 * EXIT if P == NULL.
 	 */
-
-	// TODO:
 	// P = EC_GROUP_get0_generator(group);
+	P = EC_GROUP_get0_generator(group);
+	if (!P) {
+		fprintf(stderr, "Error obtaining generator p\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 4. Allocate context and master key objects
@@ -127,8 +132,14 @@ int main(int argc, char **argv)
 	 *
 	 * EXIT if any allocation fails.
 	 */
+	ctx = BN_CTX_new();
+	d = BN_new();	//factory private key
+	D = EC_POINT_new(group);	//master public key
 
-	// TODO: Allocate ctx, d, and D
+	if (!ctx || !d || !D) {
+		fprintf(stderr, "Allocation failed\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 5. Load CA master secret d
@@ -145,7 +156,11 @@ int main(int argc, char **argv)
 	 *   - Parsing fails
 	 */
 
-	// TODO: Read d from argv[1]
+	// Read d from argv[1]
+	if (!read_bn_hex(argv[1], &d)) {
+		fprintf(stderr, "Error reading d from argument 1\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 6. Compute CA master public key D
@@ -160,7 +175,11 @@ int main(int argc, char **argv)
 	 * EXIT on failure.
 	 */
 
-	// TODO: Compute D = d * P
+	// Compute D = d * P
+	if (!EC_POINT_mul(group, D, NULL, P, d, ctx)) {
+		fprintf(stderr, "Error computing D\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 7. Write CA master keys to disk
@@ -177,8 +196,18 @@ int main(int argc, char **argv)
 	 * EXIT if any write fails.
 	 */
 
-	// TODO: Write ca_master_secret_d.txt
-	// TODO: Write ca_master_public_D.txt
+	// Write ca_master_secret_d.txt
+	if (!write_bn_hex("ca_master_secret_d.txt", d)) {
+		fprintf(stderr, "Error writing d to ca_master_secret_d.txt\n");
+		goto cleanup;
+	}
+
+	// Write ca_master_public_D.txt
+	if (!write_point_hex("ca_master_public_D.txt", group, D)) {
+		fprintf(stderr, "Error writing D to ca_master_public_D.txt\n");
+		goto cleanup;
+	}
+
 
 	/* =====================================================
 	 * 8. Allocate per-user objects
@@ -191,7 +220,19 @@ int main(int argc, char **argv)
 	 * EXIT if allocation fails.
 	 */
 
-	// TODO: Allocate per-user BIGNUMs and EC_POINTs
+	// Allocate per-user BIGNUMs and EC_POINTs
+	b_a = BN_new();
+	b_b = BN_new();
+	U_a = EC_POINT_new(group);
+	U_b = EC_POINT_new(group);
+	x_a = BN_new();
+	x_b = BN_new();
+	tmp = BN_new();
+
+	if (!b_a || !b_b || !U_a || !U_b || !x_a || !x_b || !tmp) {
+		fprintf(stderr, "Allocation of per-user objects failed\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 9. Load per-user random scalars
@@ -207,8 +248,17 @@ int main(int argc, char **argv)
 	 * EXIT if files do not exist or parsing fails.
 	 */
 
-	// TODO: Read b_a from argv[2]
-	// TODO: Read b_b from argv[3]
+	// Read b_a from argv[2]
+	if (!read_bn_hex(argv[2], &b_a)) {
+		fprintf(stderr, "Error reading b_a from argument 2\n");
+		goto cleanup;
+	}
+
+	// Read b_b from argv[3]
+	if (!read_bn_hex(argv[3], &b_b)) {
+		fprintf(stderr, "Error reading b_b from argument 3\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 10. Alice offline key generation
@@ -237,13 +287,57 @@ int main(int argc, char **argv)
 	 * EXIT immediately on any failure.
 	 */
 
-	// TODO: Compute U_a
-	// TODO: Serialize U_a to U_bytes
-	// TODO: Build buffer = ID_A || U_bytes
-	// TODO: Compute h_a using sha256_to_scalar
-	// TODO: Compute x_a
-	// TODO: Write alice_private_xa.txt
-	// TODO: Write alice_public_Ua.txt
+	// Compute U_a
+	if (!EC_POINT_mul(group, U_a, NULL, P, b_a, ctx)) {
+		fprintf(stderr, "Error computing U_a\n");
+		goto cleanup;
+	}
+
+	// Serialize U_a to U_bytes
+	if (!point_to_bytes(group, U_a, &U_bytes, &U_len)) {
+		fprintf(stderr, "Error serializing U_a to U_bytes\n");
+		goto cleanup;
+	}
+
+	// Build buffer = ID_A || U_bytes
+	size_t id_len = strlen(ID_A);
+	buf_len = id_len + U_len;
+
+	buf = malloc(buf_len);
+	if (!buf) goto cleanup;
+
+	memcpy(buf, ID_A, id_len);
+	memcpy(buf + id_len, U_bytes, U_len);
+
+	// Compute h_a using sha256_to_scalar
+	if (!sha256_to_scalar(buf, buf_len, q, &h_a)) {
+		fprintf(stderr, "Error hashing h_a\n");
+		goto cleanup;
+	}
+
+	free(U_bytes); U_bytes = NULL;
+	free(buf); buf = NULL;
+
+	// Compute x_a
+	if (!BN_mod_mul(tmp, h_a, b_a, q, ctx)) {
+		fprintf(stderr, "Error computing h_a * b_a\n");
+		goto cleanup;
+	}
+
+	if (!BN_mod_add(x_a, tmp, d, q, ctx)) {
+		fprintf(stderr, "Error computing x_a\n");
+		goto cleanup;
+	}
+	// Write alice_private_xa.txt
+	if (!write_bn_hex("alice_private_xa.txt", x_a)) {
+		fprintf(stderr, "Error writing x_a to alice_private_xa.txt\n");
+		goto cleanup;
+	}
+	// Write alice_public_Ua.txt
+	if (!write_point_hex("alice_public_Ua.txt", group, U_a)) {
+		fprintf(stderr, "Error writing U_a to alice_public_Ua.txt\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 11. Bob offline key generation
@@ -261,7 +355,59 @@ int main(int argc, char **argv)
 	 *   - bob_public_Ub.txt
 	 */
 
-	// TODO: Repeat steps for Bob
+	// Repeat steps for Bob
+	// Compute U_b
+	if (!EC_POINT_mul(group, U_b, NULL, P, b_b, ctx)) {
+		fprintf(stderr, "Error computing U_b\n");
+		goto cleanup;
+	}
+	// Serialize U_b to U_bytes
+	if (!point_to_bytes(group, U_b, &U_bytes, &U_len)) {
+		fprintf(stderr, "Error serializing U_b\n");
+		goto cleanup;
+	}
+
+	// Build buffer = ID_B || U_bytes
+	size_t id_len_b = strlen(ID_B);
+	buf_len = id_len_b + U_len;
+
+	buf = malloc(buf_len);
+	if (!buf) goto cleanup;
+
+	memcpy(buf, ID_B, id_len_b);
+	memcpy(buf + id_len_b, U_bytes, U_len);
+
+	// Compute h_b using sha256_to_scalar
+	if (!sha256_to_scalar(buf, buf_len, q, &h_b)) {
+		fprintf(stderr, "Error hashing h_b\n");
+		goto cleanup;
+	}
+
+	free(U_bytes); U_bytes = NULL;
+	free(buf); buf = NULL;
+
+	// Compute x_b
+	if (!BN_mod_mul(tmp, h_b, b_b, q, ctx)) {
+		fprintf(stderr, "Error computing h_b * b_b\n");
+		goto cleanup;
+	}
+
+	if (!BN_mod_add(x_b, tmp, d, q, ctx)) {
+		fprintf(stderr, "Error computing x_b\n");
+		goto cleanup;
+	}
+
+	// Write bob_private_xb.txt
+	if (!write_bn_hex("bob_private_xb.txt", x_b)) {
+		fprintf(stderr, "Error writing x_b to bob_private_xb.txt\n");
+		goto cleanup;
+	}
+
+	// Write bob_public_Ub.txt
+	if (!write_point_hex("bob_public_Ub.txt", group, U_b)) {
+		fprintf(stderr, "Error writing U_b to bob_public_Ub.txt\n");
+		goto cleanup;
+	}
 
 	printf("[CA] Offline keys generated for Alice and Bob.\n");
 	ret = EXIT_SUCCESS;
@@ -281,7 +427,26 @@ int main(int argc, char **argv)
 	 */
 
 cleanup:
-	// TODO: Free all allocated resources
+	// Free all allocated resources
+	if (b_a) BN_free(b_a);
+	if (b_b) BN_free(b_b);
+	if (x_a) BN_free(x_a);
+	if (x_b) BN_free(x_b);
+	if (h_a) BN_free(h_a);
+	if (h_b) BN_free(h_b);
+	if (tmp) BN_free(tmp);
 
+	if (U_a) EC_POINT_free(U_a);
+	if (U_b) EC_POINT_free(U_b);
+	if (D) EC_POINT_free(D);
+
+	if (d) BN_free(d);
+	if (q) BN_free(q);
+	if (group) EC_GROUP_free(group);
+	if (ctx) BN_CTX_free(ctx);
+
+	if (U_bytes) free(U_bytes);
+	if (buf) free(buf);
+	
 	return ret;
 }
