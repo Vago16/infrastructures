@@ -105,7 +105,11 @@ int main(int argc, char **argv)
 	 * EXIT on failure.
 	 */
 
-	// TODO: Call init_group(&group, &q)
+	// Call init_group(&group, &q)
+	if (!init_group(&group, &q)) {
+		fprintf(stderr, "Error initializing group\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 3. Obtain generator P
@@ -117,7 +121,12 @@ int main(int argc, char **argv)
 	 * EXIT if P == NULL.
 	 */
 
-	// TODO: Set P = EC_GROUP_get0_generator(group)
+	// Set P = EC_GROUP_get0_generator(group)
+	P = EC_GROUP_get0_generator(group);
+	if (!P) {
+		fprintf(stderr, "Error getting generator P\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 4. Allocate BN_CTX
@@ -129,7 +138,12 @@ int main(int argc, char **argv)
 	 * EXIT if allocation fails.
 	 */
 
-	// TODO: Allocate ctx
+	// Allocate ctx
+	ctx = BN_CTX_new();
+	if (!ctx) {
+		fprintf(stderr, "Error allocating BN_CTX\n");
+		goto cleanup;
+	}
 
 	/* =====================================================
 	 * 5. Load Alice and system public parameters
