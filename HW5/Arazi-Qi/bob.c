@@ -105,7 +105,11 @@ int main(int argc, char **argv)
      * EXIT on failure.
      */
 
-    // TODO: Call init_group(&group, &q)
+    // Call init_group(&group, &q)
+    if (!init_group(&group, &q)) {
+        fprintf(stderr, "Error initializing elliptic curve group\n");
+        goto cleanup;
+    }
 
     /* =====================================================
      * 3. Obtain generator P
@@ -117,7 +121,12 @@ int main(int argc, char **argv)
      * EXIT if P == NULL.
      */
 
-    // TODO: Set P = EC_GROUP_get0_generator(group)
+    // Set P = EC_GROUP_get0_generator(group)
+    P = EC_GROUP_get0_generator(group);
+    if (!P) {
+        fprintf(stderr, "Error getting generator P\n");
+        goto cleanup;
+    }
 
     /* =====================================================
      * 4. Allocate BN_CTX
@@ -129,7 +138,35 @@ int main(int argc, char **argv)
      * EXIT if allocation fails.
      */
 
-    // TODO: Allocate ctx
+    // Allocate ctx
+    if (!read_bn_hex(argv[1], &x_b)) {
+        fprintf(stderr, "Error reading x_b\n");
+        goto cleanup;
+    }
+
+    U_b = EC_POINT_new(group);
+    U_a = EC_POINT_new(group);
+    D   = EC_POINT_new(group);
+
+    if (!U_b || !U_a || !D) {
+        fprintf(stderr, "Error allocating EC_POINTs\n");
+        goto cleanup;
+    }
+
+    if (!read_point_hex(argv[2], group, &U_b)) {
+        fprintf(stderr, "Error reading U_b\n");
+        goto cleanup;
+    }
+
+    if (!read_point_hex(argv[4], group, &U_a)) {
+        fprintf(stderr, "Error reading U_a\n");
+        goto cleanup;
+    }
+
+    if (!read_point_hex(argv[5], group, &D)) {
+        fprintf(stderr, "Error reading D\n");
+        goto cleanup;
+    }
 
     /* =====================================================
      * 5. Load Bob and system public parameters
