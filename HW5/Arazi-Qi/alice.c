@@ -303,8 +303,10 @@ int main(int argc, char **argv)
 		goto cleanup;
 	}
 
-	free(U_bytes); U_bytes = NULL;
-	free(buf); buf = NULL;
+	free(U_bytes); 
+	U_bytes = NULL;
+	free(buf); 
+	buf = NULL;
 
 	/* =====================================================
 	 * 10. Compute shared key K_ab
