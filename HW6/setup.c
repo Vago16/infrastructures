@@ -26,6 +26,10 @@ void to_upper(char *s) {
 }
 
 BIGNUM* sha256_to_bn(const char *input) {
+    if (!input) {
+        printf("Error: NULL input to SHA256\n");
+        exit(1);
+    }
     unsigned char hash[32];
     SHA256((unsigned char*)input, strlen(input), hash);
     return BN_bin2bn(hash, 32, NULL);
@@ -44,7 +48,7 @@ Node* build_tree(BIGNUM **secrets, int start, int end,
     Node *node = malloc(sizeof(Node));
     node->left = node->right = NULL;
 
-    /* leaf */
+    //leaf
     if (n == 1) {
         node->K = BN_dup(secrets[start]);
         node->BK = BN_new();
@@ -58,6 +62,7 @@ Node* build_tree(BIGNUM **secrets, int start, int end,
     node->left = build_tree(secrets, start, mid, g, p, ctx);
     node->right = build_tree(secrets, mid, end, g, p, ctx);
 
+    //Kparent = (BK_left ^ K_right) mod p
     node->K = BN_new();
     BN_mod_exp(node->K,
                node->left->BK,
@@ -87,7 +92,7 @@ void write_leaves(Node *node, FILE *f) {
     write_leaves(node->right, f);
 }
 
-/* Write nternal node blinded keys in post-order (children before parent) */
+/* Write internal node blinded keys in post-order */
 void write_internal(Node *node, FILE *f) {
     if (!node || (!node->left && !node->right)) return;
 
@@ -101,72 +106,88 @@ void write_internal(Node *node, FILE *f) {
 }
 
 int main(int argc, char *argv[]) {
-    //if wrong number of arguments passed
-    if (argc < 5) {
-        printf("Wrong number of arguments passed\n");
+    //debug statement
+    printf("DEBUG: Setup started\n");
+
+    //4 seeds specified in assignment
+    if (argc < 7) {
+        printf("Usage: ./Setup p g seed0 seed1 seed2 seed3\n");
         return 1;
     }
-    //1. Read DH parameters p and g from files.
+
     BN_CTX *ctx = BN_CTX_new();
 
-    //read p
     int len;
+
+    //1. Read DH parameters p and g from files.
+    //read p
     char *p_str = Read_File(argv[1], &len);
+    if (!p_str) return 1;
+
     BIGNUM *p = NULL;
     BN_hex2bn(&p, p_str);
     free(p_str);
 
     //read g
     char *g_str = Read_File(argv[2], &len);
+    if (!g_str) return 1;
+
     BIGNUM *g = NULL;
     BN_hex2bn(&g, g_str);
     free(g_str);
 
-    int n = argc - 3;
+    if (!p || !g) {
+        printf("Error reading p or g\n");
+        return 1;
+    }
 
-    //2. Read member seed files (one per member). Derive each member’s secret key via SHA-256.
+    //specofied value of 4
+    int n = 4;
+
     BIGNUM **secrets = malloc(n * sizeof(BIGNUM*));
 
+    //2. Read member seed files (one per member). Derive each member’s secret key via SHA-256
+    //read seeds to hash to secrets
     for (int i = 0; i < n; i++) {
         char *seed = Read_File(argv[i + 3], &len);
 
-        secrets[i] = sha256_to_bn(seed);
+        if (!seed) {
+            fprintf(stderr, "Failed reading seed %s\n", argv[i + 3]);
+            return 1;
+        }
 
+        secrets[i] = sha256_to_bn(seed);
         free(seed);
     }
 
-    //3. Build the TGDH key tree using left-heavy balanced splitting. (both steps 3 and 4 are done at the same time)
-    //4. Compute all internal node keys bottom-up using Kparent = BK Kright left mod p.
+    //3/4. Build the TGDH key tree using left-heavy balanced splitting
+    //build tree and compute nodes
     Node *root = build_tree(secrets, 0, n, g, p, ctx);
 
     //5. Write the group key (hex) to “group key setup.txt”.
     char *group_hex = BN_bn2hex(root->K);
     to_upper(group_hex);
-
     Write_File("group_key_setup.txt", group_hex);
     OPENSSL_free(group_hex);
 
-    //6. Write all blinded keys (hex, one per line) to “blinded keys setup.txt”:
-        //• First: leaf blinded keys, left to right
-        //• Then: internal node blinded keys in post-order (children before parent)
-
+    //6. Write all blinded keys (hex, one per line) to “blinded keys setup.txt"
     FILE *f = fopen("blinded_keys_setup.txt", "w");
+    if (!f) return 1;
 
     write_leaves(root, f);
     write_internal(root, f);
+
     fclose(f);
 
-     BN_CTX_free(ctx);
+    BN_CTX_free(ctx);
 
     return 0;
 }
 
-//from RequiredFunctionsTGDH.c
-/*
-   File I/O Functions  
- */
+/* ==========================
+   PROVIDED HELPER FUNCTIONS
+   ========================== */
 
-/* Read entire file as string, strip trailing whitespace */
 char* Read_File(const char *filename, int *length) {
     FILE *file = fopen(filename, "r");
     if (!file) {
@@ -180,7 +201,7 @@ char* Read_File(const char *filename, int *length) {
     if (!buffer) { fclose(file); return NULL; }
     size_t read_size = fread(buffer, 1, file_size, file);
     buffer[read_size] = '\0';
-    while (read_size > 0 && (buffer[read_size-1] == '\n' || 
+    while (read_size > 0 && (buffer[read_size-1] == '\n' ||
            buffer[read_size-1] == '\r' || buffer[read_size-1] == ' '))
         buffer[--read_size] = '\0';
     *length = (int)read_size;
@@ -188,7 +209,6 @@ char* Read_File(const char *filename, int *length) {
     return buffer;
 }
 
-/* Write string to file */
 int Write_File(const char *filename, const char *data) {
     FILE *file = fopen(filename, "w");
     if (!file) {
@@ -198,63 +218,4 @@ int Write_File(const char *filename, const char *data) {
     fprintf(file, "%s", data);
     fclose(file);
     return 0;
-}
-
-/* Read an integer from a file */
-int Read_Int_From_File(const char *filename) {
-    int length;
-    char *str = Read_File(filename, &length);
-    if (!str) return -1;
-    int value = atoi(str);
-    free(str);
-    return value;
-}
-
-/* 
-Read multi-line file into array of strings (one per line).
-Returns number of lines read. Caller must free each line and the array
-*/
-int Read_Lines(const char *filename, char ***lines_out) {
-    FILE *f = fopen(filename, "r");
-    if (!f) { fprintf(stderr, "Error: Cannot open %s\n", filename); return 0; }
-    
-    char **lines = NULL;
-    int count = 0;
-    char buf[1024];
-    
-    while (fgets(buf, sizeof(buf), f)) {
-        /* Strip newline/whitespace */
-        int len = strlen(buf);
-        while (len > 0 && (buf[len-1] == '\n' || buf[len-1] == '\r' || buf[len-1] == ' '))
-            buf[--len] = '\0';
-        if (len == 0) continue;  /* skip blank lines */
-        
-        lines = realloc(lines, (count + 1) * sizeof(char*));
-        lines[count] = strdup(buf);
-        count++;
-    }
-    
-    fclose(f);
-    *lines_out = lines;
-    return count;
-}
-
-
-/* 
-   Hex Conversion Functions  
-*/
-
-/* Print data as hex */
-void Print_Hex(const char *label, const unsigned char *data, int len) {
-    printf("%s: ", label);
-    for (int i = 0; i < len; i++)
-        printf("%02x", data[i]);
-    printf("\n");
-}
-
-/* Convert byte array to hex string */
-void Bytes_to_Hex(char *output, const unsigned char *input, int inputlength) {
-    for (int i = 0; i < inputlength; i++)
-        sprintf(&output[2*i], "%02x", input[i]);
-    output[inputlength * 2] = '\0';
 }
