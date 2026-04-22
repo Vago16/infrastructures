@@ -4,9 +4,9 @@ set -euo pipefail
 rm -rf *.log CA Alice Bob
 rm -f Signature.txt Verification.txt PK.txt SK.txt
 
-gcc KeyGen.c -lcrypto        -o CA
-gcc Sign.c   -lcrypto -lm    -o Alice
-gcc Verify.c -lcrypto -lm    -o Bob
+gcc hors_KeyGen.c -lcrypto        -o CA
+gcc hors_Sign.c   -lcrypto -lm    -o Alice
+gcc hors_Verify.c -lcrypto -lm    -o Bob
 
 declare -A SIGNATURE_ELEMENTS=( [128]=36 [256]=32 [1024]=25 )
 

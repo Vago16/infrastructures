@@ -2,9 +2,9 @@
 
 NUM_TESTS=3
 
-CA_SRC="KeyGen.c"
-ALICE_SRC="Sign.c"
-BOB_SRC="Verify.c"
+CA_SRC="lamport_KeyGen.c"
+ALICE_SRC="lamport_Sign.c"
+BOB_SRC="lamport_Verify.c"
 
 CA_BIN="CA"
 ALICE_BIN="Alice"
